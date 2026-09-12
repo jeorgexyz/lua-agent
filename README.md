@@ -57,6 +57,13 @@ a frontier model gets both right and you learn nothing about which is which.
 
 ## See it run
 
+A real model working the loop — `calc` for the arithmetic it cannot do, then
+the answer (qwen2.5:1.5b via Ollama, 8.2s):
+
+<p align="center">
+  <img src="./assets/demo-ollama.gif" alt="the agent using calc and answering" width="640">
+</p>
+
 Writing a file, reading it back, and confirming — with the approval gate in
 front of the write:
 
@@ -77,8 +84,13 @@ unhelpful result, so the model gives up honestly instead of spinning:
 — the gate says no and the agent reports that rather than claiming success —
 is [`examples/denied-write.txt`](examples/denied-write.txt).
 
-These are recordings of the `replay` backend, so they run in 0.1s and are
-generated rather than performed:
+The last three run on the `replay` backend — deterministic, offline, 0.1s,
+and driven by the `replay:` command printed in the matching transcript, so a
+GIF cannot show behaviour the transcript does not claim. The first is a live
+capture against a real model, as is the MCP one below; those need the model
+(and server) present to regenerate and are skipped with a note otherwise.
+
+All of them are generated rather than performed:
 
 ```bash
 python tools/make_demos.py
@@ -237,12 +249,12 @@ gate, same grammar, same "a failure is an observation" rule.
 lua54 main.lua "Echo hello" --backend ollama   --mcp "npx -y @modelcontextprotocol/server-everything"
 ```
 
-```
-mcp:     mcp-servers/everything (2025-06-18) -- 13 tools
-[step 2] continue
-  call:    {"args":{"message":"hello from the agent"},"tool":"mcp_echo"}
-  result:  Echo: hello from the agent
-```
+<p align="center">
+  <img src="./assets/demo-mcp.gif" alt="the agent calling a tool on a real MCP server" width="700">
+</p>
+
+Thirteen tools from a real server sitting in the registry next to `calc`, and
+the model reaching for one of them.
 
 `mcp.lua` is ~230 lines: `initialize`, `notifications/initialized`,
 `tools/list`, `tools/call`, over either transport. That is the whole surface

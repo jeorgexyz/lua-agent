@@ -9,6 +9,15 @@ Regenerate everything here with:
 lua54 record.lua
 ```
 
+## Contents at a glance
+
+| File | What it is | Reproducible offline |
+|---|---|---|
+| `constrained-vs-free.txt` | the 100% / 0% parse-rate measurement, stories15M | yes, `eval/ablate.lua` |
+| `eval-qwen1.5b.txt` | 6/8 against a real instruct model | needs Ollama |
+| `eval-42M.txt` | 0/7 against stories42M, for contrast | needs the checkpoint |
+| the seven task transcripts | the loop's mechanisms, scripted model | yes, each prints its own command |
+
 ## The headline result
 
 | File | What it shows |
@@ -18,6 +27,18 @@ lua54 record.lua
 Produced by `lua54 eval/ablate.lua --n 30`. Real inference against the 15M
 checkpoint from repo 1, greedy sampling, identical prompts in both arms. The
 only difference between the arms is whether `grammar.lua` masks the logits.
+
+## Real-model runs
+
+| File | What it shows |
+|---|---|
+| `eval-qwen1.5b.txt` | the full eval against qwen2.5:1.5b via Ollama — 6/8, with the two honest failures |
+| `eval-42M.txt` | the same tasks against stories42M — 0/7, six of seven answered without touching a tool |
+
+Put side by side these are the capability boundary: a 42M TinyStories model
+answers immediately and never picks a tool; a 1.5B instruct model picks the
+right tool and chains two of them, but still cannot recover from a dead end
+or decline to confabulate.
 
 ## Loop transcripts
 
