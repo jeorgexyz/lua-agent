@@ -19,7 +19,13 @@ import shutil
 import subprocess
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    raise SystemExit(
+        "make_gif needs Pillow:  pip install pillow\n"
+        "It is the repo's only dependency, and only for regenerating the\n"
+        "README GIFs -- nothing the agent runs on needs it.")
 
 # A muted dark palette. Enough colour to read the structure, not a rainbow.
 BG = (13, 17, 23)

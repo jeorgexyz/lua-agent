@@ -14,7 +14,9 @@ The sequel to [lua-llama](https://github.com/jeorgexyz/lua-llama) — that repo 
 
 The loop itself is 155 lines of Lua; with its wire protocol, 273. No
 dependencies — no HTTP library, no JSON library, no C extensions. Same rules
-as repo 1.
+as repo 1. (The only exception is outside the runtime: `tools/make_gif.py`
+needs Pillow to regenerate the README's GIFs. Nothing the agent runs on
+touches it.)
 
 ---
 

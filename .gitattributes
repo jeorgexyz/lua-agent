@@ -1,0 +1,16 @@
+# Normalise line endings. Every commit so far has warned "LF will be
+# replaced by CRLF" because the working tree is Windows and the repo is
+# not. Without this, whoever clones next gets whatever their autocrlf
+# happens to be set to, and the traces in traces/ -- which the replay
+# tests compare byte for byte -- are exactly the kind of file that
+# breaks on.
+* text=auto eol=lf
+
+# Binary: never touch these.
+*.png binary
+*.gif binary
+*.bin binary
+
+# Recorded traces and transcripts are compared literally by
+# verify_examples.lua and the replay test group.
+*.jsonl -text
