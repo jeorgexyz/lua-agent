@@ -1,0 +1,24 @@
+task:   Write the number 42 to out.txt, then read it back to confirm.
+tools:  write_file, read_file
+model:  scripted (see eval/tasks/tasks.lua)
+replay: lua54 main.lua "Write the number 42 to out.txt, then read it back to confirm." --replay traces/approved-write.jsonl --tools write_file,read_file --max-steps 10 --yes
+
+[step 1] continue
+  window: 75 / 4096 tokens
+  thought: Write the value first.
+  call:    {"tool":"write_file","args":{"path":"out.txt","text":"42"}}
+  result:  wrote 2 bytes to out.txt
+
+[step 2] continue
+  window: 123 / 4096 tokens
+  thought: Read it back to be sure it landed.
+  call:    {"tool":"read_file","args":{"path":"out.txt"}}
+  result:  42
+
+[step 3] answer
+  window: 166 / 4096 tokens
+  thought: Confirmed.
+  call:    {"tool":"answer","args":{"text":"Wrote 42 to out.txt and read it back."}}
+
+------------------------------------------------------------
+ANSWER: Wrote 42 to out.txt and read it back.

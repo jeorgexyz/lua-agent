@@ -1,0 +1,28 @@
+task:   Read the notes file and tell me the first word.
+tools:  read_file, list_dir
+model:  scripted (see eval/tasks/tasks.lua)
+replay: lua54 main.lua "Read the notes file and tell me the first word." --replay traces/recover-missing-file.jsonl --tools read_file,list_dir --max-steps 10
+
+[step 1] tool_error
+  window: 64 / 4096 tokens
+  thought: Try the obvious path.
+  call:    {"tool":"read_file","args":{"path":"notes.txt"}}
+  result:  Error: cannot open "notes.txt" (No such file or directory)
+
+[step 2] continue
+  window: 115 / 4096 tokens
+  thought: Not there. Look in the fixtures directory.
+  call:    {"tool":"read_file","args":{"path":"eval/fixtures/notes.txt"}}
+  result:  alpha beta gamma
+           second line here
+           third line of notes
+           fourth and final line
+           
+
+[step 3] answer
+  window: 182 / 4096 tokens
+  thought: The first word is alpha.
+  call:    {"tool":"answer","args":{"text":"alpha"}}
+
+------------------------------------------------------------
+ANSWER: alpha

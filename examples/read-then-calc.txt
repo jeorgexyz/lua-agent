@@ -1,0 +1,28 @@
+task:   How many lines are in eval/fixtures/notes.txt, times 3?
+tools:  read_file, calc
+model:  scripted (see eval/tasks/tasks.lua)
+replay: lua54 main.lua "How many lines are in eval/fixtures/notes.txt, times 3?" --replay traces/read-then-calc.jsonl --tools read_file,calc --max-steps 10
+
+[step 1] continue
+  window: 70 / 4096 tokens
+  thought: First read the file.
+  call:    {"tool":"read_file","args":{"path":"eval/fixtures/notes.txt"}}
+  result:  alpha beta gamma
+           second line here
+           third line of notes
+           fourth and final line
+           
+
+[step 2] continue
+  window: 131 / 4096 tokens
+  thought: Four lines, so four times three.
+  call:    {"tool":"calc","args":{"expr":"4 * 3"}}
+  result:  12
+
+[step 3] answer
+  window: 171 / 4096 tokens
+  thought: Done.
+  call:    {"tool":"answer","args":{"text":"12"}}
+
+------------------------------------------------------------
+ANSWER: 12

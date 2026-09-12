@@ -1,0 +1,36 @@
+task:   What is the MARKER line at the top of eval/fixtures/big.txt?
+tools:  read_file, calc
+model:  scripted (see eval/tasks/tasks.lua)
+replay: lua54 main.lua "What is the MARKER line at the top of eval/fixtures/big.txt?" --replay traces/oversized-observation.jsonl --tools read_file,calc --max-steps 10 --max-tokens 400
+
+[step 1] continue
+  window: 72 / 400 tokens
+  thought: Read the big file.
+  call:    {"tool":"read_file","args":{"path":"eval/fixtures/big.txt"}}
+  result:  MARKER: omega
+           filler line 1 with assorted padding words to consume context budget
+           filler line 2 with assorted padding words to consume context budget
+           filler line 3 with assorted padding words to consume context budget
+           filler line 4 with assorted padding words to consume context budget
+           filler line 5 
+           ... [trimmed for display]
+
+[step 2] continue
+  window: 332 / 400 tokens  (evicted)
+  thought: Add something to push the window.
+  call:    {"tool":"calc","args":{"expr":"1 + 1"}}
+  result:  2
+
+[step 3] continue
+  window: 160 / 400 tokens  (evicted)
+  thought: And again.
+  call:    {"tool":"calc","args":{"expr":"2 + 2"}}
+  result:  4
+
+[step 4] answer
+  window: 194 / 400 tokens  (evicted)
+  thought: The last word is omega.
+  call:    {"tool":"answer","args":{"text":"omega"}}
+
+------------------------------------------------------------
+ANSWER: omega

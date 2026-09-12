@@ -1,0 +1,18 @@
+task:   Save the number 42 to out.txt.
+tools:  calc, write_file
+model:  scripted (see eval/tasks/tasks.lua)
+replay: lua54 main.lua "Save the number 42 to out.txt." --replay traces/denied-write.jsonl --tools calc,write_file --max-steps 10
+
+[step 1] denied
+  window: 68 / 4096 tokens
+  thought: Write the file.
+  call:    {"tool":"write_file","args":{"path":"out.txt","text":"42"}}
+  result:  Denied: the user did not approve calling write_file.
+
+[step 2] answer
+  window: 121 / 4096 tokens
+  thought: I was denied, so I should say so.
+  call:    {"tool":"answer","args":{"text":"I was not allowed to write out.txt."}}
+
+------------------------------------------------------------
+ANSWER: I was not allowed to write out.txt.

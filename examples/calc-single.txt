@@ -1,0 +1,18 @@
+task:   What is 4871 * 209?
+tools:  calc
+model:  scripted (see eval/tasks/tasks.lua)
+replay: lua54 main.lua "What is 4871 * 209?" --replay traces/calc-single.jsonl --tools calc --max-steps 10
+
+[step 1] continue
+  window: 52 / 4096 tokens
+  thought: I cannot do this in my head.
+  call:    {"tool":"calc","args":{"expr":"4871 * 209"}}
+  result:  1018039
+
+[step 2] answer
+  window: 102 / 4096 tokens
+  thought: I have the product.
+  call:    {"tool":"answer","args":{"text":"1018039"}}
+
+------------------------------------------------------------
+ANSWER: 1018039

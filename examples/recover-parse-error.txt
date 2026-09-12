@@ -1,0 +1,22 @@
+task:   What is 2 + 2?
+tools:  calc
+model:  scripted (see eval/tasks/tasks.lua)
+replay: lua54 main.lua "What is 2 + 2?" --replay traces/recover-parse-error.jsonl --tools calc --max-steps 10
+
+[step 1] parse_error
+  window: 47 / 4096 tokens
+  result:  The tool call was not valid JSON (json: expected comma or close-brace at byte 39). Write it on one line as {"tool":"<name>","args":{"<key>":"<value>"}}.
+
+[step 2] continue
+  window: 124 / 4096 tokens
+  thought: My JSON was cut off, let me redo it.
+  call:    {"tool":"calc","args":{"expr":"2 + 2"}}
+  result:  4
+
+[step 3] answer
+  window: 167 / 4096 tokens
+  thought: Four.
+  call:    {"tool":"answer","args":{"text":"4"}}
+
+------------------------------------------------------------
+ANSWER: 4

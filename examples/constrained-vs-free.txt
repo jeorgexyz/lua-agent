@@ -1,0 +1,40 @@
+Constrained decoding vs free decoding
+=====================================
+
+Model:       stories15M
+Sampler:     greedy (temperature 0.0), identical in both arms
+Prompt:      identical in both arms
+Difference:  logit masking, on or off
+Trials:      30
+
+Running constrained arm...
+Running free arm...
+
+  arm            parsed as a tool call     picked a usable tool
+  -----------    ---------------------     --------------------
+  constrained     30/30   (100.0%)              0/30   (  0.0%)
+  free             0/30   (  0.0%)              0/30   (  0.0%)
+
+  (973s constrained, 553s free, pure Lua CPU inference)
+
+The two columns are the whole point.
+
+The first column is the GRAMMAR's work: whether the output is a
+syntactically valid tool call. Masking takes it to 100% on a model
+that has never seen JSON.
+
+The second column is the MODEL's work: whether the tool it chose could
+plausibly serve the task. The grammar cannot help here, and a 15M
+TinyStories checkpoint has nothing to contribute.
+
+Tool calling is a decoding constraint. Choosing the right tool is not.
+
+Sample output, constrained arm:
+  {"tool":"answer","args":{"text":":ged to the file. ucked the file and put it away.  The filewile was very sad and said "}}
+  {"tool":"answer","args":{"text":"One day, two days ago, a little girl was born. She was so happy that she could make her mommy proud.  She was so proud of herself that she decided to do something special.  She wanted to make her mommy proud.  She grabbed her pencil and started to draw a p"}}
+  {"tool":"answer","args":{"text":"The 'A'.  One day, I am going to the park to play with my friends.  One day, I am going to the park to play with them."}}
+
+Sample output, free arm:
+  ine nodded and said "Yes, I will be careful with it."
+  s and she was very proud of her daughter.
+  s and listens to the instructions.

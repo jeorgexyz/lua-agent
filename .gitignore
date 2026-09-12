@@ -1,0 +1,5 @@
+# Model checkpoints live in the lua-llama checkout, not here.
+*.bin
+
+# traces/*.jsonl are NOT ignored: the replay tests and every transcript in
+# examples/ depend on them, so they are part of the repo.

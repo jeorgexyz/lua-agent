@@ -1,0 +1,18 @@
+Agent loop evaluation
+=====================
+
+Model:  qwen2.5:1.5b-instruct  (ollama backend, real inference)
+Decode: the backend's own (grammar.lua is not in this loop)
+
+  task                     pass   steps  window   tools it chose
+  ------------------------ ----   -----  ------   ------------------------
+  calc-single              ok     2      68       calc,answer
+  read-then-calc           ok     3      174      read_file,calc,answer
+  recover-parse-error      ok     2      62       calc,answer
+  recover-missing-file     FAIL   8      665      read_file,read_file,read_file,read_file,read_file,read_file,read_file,read_file
+  loop-bait                FAIL   2      113      read_file,answer
+  oversized-observation    ok     2      341      read_file,answer
+  approved-write           ok     3      179      write_file,read_file,answer
+  denied-write             ok     2      137      write_file,answer
+
+  6/8 passed

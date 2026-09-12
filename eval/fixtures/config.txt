@@ -1,0 +1,4 @@
+mode = production
+retries = 3
+timeout_ms = 5000
+verbose = false

@@ -1,0 +1,18 @@
+Agent loop evaluation
+=====================
+
+Model:  stories42M.bin (real inference)
+Config: dim=512 layers=8 seq_len=1024  (window budget 768)
+Decode: grammar-constrained
+
+  task                     pass   steps  window   tools it chose
+  ------------------------ ----   -----  ------   ------------------------
+  calc-single              FAIL   1      52       answer
+  read-then-calc           FAIL   1      70       answer
+  recover-parse-error      FAIL   1      47       answer
+  recover-missing-file     FAIL   1      64       answer
+  loop-bait                FAIL   1      46       answer
+  oversized-observation    FAIL   1      67       answer
+  denied-write             FAIL   2      174      write_file,answer
+
+  0/7 passed
