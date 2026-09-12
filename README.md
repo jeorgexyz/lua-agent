@@ -244,18 +244,44 @@ mcp:     mcp-servers/everything (2025-06-18) -- 13 tools
   result:  Echo: hello from the agent
 ```
 
-`mcp.lua` is 173 lines: `initialize`, `notifications/initialized`,
-`tools/list`, `tools/call`. That is the whole surface needed to use a real
-server.
+`mcp.lua` is ~230 lines: `initialize`, `notifications/initialized`,
+`tools/list`, `tools/call`, over either transport. That is the whole surface
+needed to use a real server.
 
-**One honest limitation.** Lua has no bidirectional pipes -- `io.popen`
-opens a stream for reading *or* writing, never both -- so a long-lived
-stdio session is out of reach without a C extension. Instead the whole
-request sequence is written to a file, the server runs with it as stdin,
-and everything it writes before exiting on EOF is read back. That costs a
-process spawn per tool call (seconds, for an npx-launched server). It is
-correct and slow, and `transport` is the seam where a persistent
-implementation drops in.
+### Two transports, and why there are two
+
+```bash
+# stdio: server launched per call
+lua54 main.lua "Echo hello" --mcp "npx -y @modelcontextprotocol/server-everything"
+
+# streamable HTTP: one long-lived server, one session
+npx -y @modelcontextprotocol/server-everything streamableHttp   # port 3001
+lua54 main.lua "Echo hello" --mcp-url http://localhost:3001/mcp
+```
+
+**Lua has no bidirectional pipes.** `io.popen` opens a stream for reading
+*or* writing, never both, so a long-lived stdio session is out of reach
+without a C extension. The stdio transport works around it: write the whole
+request sequence to a file, run the server with it as stdin, read what it
+writes before it exits on EOF. Every call re-spawns the server and
+re-handshakes.
+
+That is slow, and worse, **it is wrong for any server that holds state** —
+a re-spawned server loses the session, the open handle, the cursor. Speed is
+just the visible symptom.
+
+Streamable HTTP fixes both, in pure Lua, because the server is long-lived on
+its own and `curl` only ever needs request/response. The `Mcp-Session-Id`
+header returned by `initialize` is echoed on every later request, so one
+session spans the whole run. Measured against `server-everything`:
+
+| | discovery | per call | handshakes |
+|---|---|---|---|
+| stdio | 3.4s | ~3.4s | one per call |
+| http | 0.24s | **0.06s** | one, total |
+
+Roughly **57x** on tool calls, and state survives. Use stdio for servers
+that only speak it; prefer `--mcp-url` otherwise.
 
 **Two things the real server taught that the spec reads past**, both now
 pinned by tests:

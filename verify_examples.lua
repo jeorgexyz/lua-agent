@@ -72,7 +72,13 @@ for _, path in ipairs(list_examples()) do
             shell_cmd = '"' .. run .. '"'
         end
 
-        local pipe = io.popen(shell_cmd .. " 2>&1", "r")
+        -- Close stdin. The denied-write transcript deliberately omits
+        -- --yes, so main.lua reaches the approval prompt and calls
+        -- io.read("l"). With stdin inherited from a terminal that blocks
+        -- forever instead of returning nil -- this harness hung on it, and
+        -- CI would have hung the same way.
+        local devnull = package.config:sub(1, 1) == "\\" and "NUL" or "/dev/null"
+        local pipe = io.popen(shell_cmd .. " < " .. devnull .. " 2>&1", "r")
         local out = pipe and pipe:read("a") or ""
         if pipe then pipe:close() end
 

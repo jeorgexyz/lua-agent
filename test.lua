@@ -758,6 +758,33 @@ do
         local sok = pcall(function() return c5:discover() end)
         check("a dead server raises rather than hanging", not sok)
 
+        -- Streamable HTTP replies are SSE frames, not bare JSON -- even for
+        -- a single response. Captured from server-everything.
+        local sse = table.concat({
+          "event: message",
+          "id: c93c36e5-2a40-47fe-add0-8295cae3aa4f",
+          'data: {"result":{"protocolVersion":"2025-06-18","serverInfo":' ..
+            '{"name":"mcp-servers/everything"}},"jsonrpc":"2.0","id":1}',
+        }, "\n")
+        local c7 = mcp.new({ transport = transport(sse) })
+        local by_id = c7:exchange({ { jsonrpc = "2.0", id = 1, method = "initialize" } })
+        check("unwraps SSE data: frames", by_id[1] ~= nil)
+        eq("and reads through to the payload",
+           by_id[1] and by_id[1].result.serverInfo.name, "mcp-servers/everything")
+
+        -- Over HTTP the handshake happens once and the session id carries
+        -- it; over stdio the server is re-spawned, so every exchange must
+        -- re-handshake. Getting this backwards either wastes a round trip
+        -- per call or talks to an uninitialised server.
+        local h = mcp.new({ url = "http://localhost:1/mcp" })
+        eq("http handshakes on the first exchange", #h:handshake(), 2)
+        h.session_ready = true
+        eq("and not again afterwards", #h:handshake(), 0)
+
+        local st = mcp.new({ command = "true" })
+        st.session_ready = true
+        eq("stdio always re-handshakes", #st:handshake(), 2)
+
         -- Garbage on stdout must not kill an otherwise good exchange.
         local c6 = mcp.new({ transport = transport(table.concat({
           "Starting default (STDIO) server...",

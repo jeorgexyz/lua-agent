@@ -15,26 +15,31 @@
 --     --mcp "npx -y @modelcontextprotocol/server-everything"
 --
 --
--- THE CONSTRAINT THAT SHAPES THIS FILE
+-- TWO TRANSPORTS, AND WHY THERE ARE TWO
 --
 -- Lua has no bidirectional pipes. io.popen opens a stream for reading OR
 -- writing, never both:
 --
 --   io.popen("cat", "rw")  -->  bad argument #2 to 'popen' (invalid mode)
 --
--- A long-lived stdio session needs both halves at once, so a persistent
--- connection is not reachable without a C extension (luaposix, luv). What
--- IS reachable: write the whole request sequence to a file, run the server
--- with that file as stdin, and read everything it writes before it exits on
--- EOF.
+-- A long-lived stdio session needs both halves at once, so it is out of
+-- reach without a C extension. The stdio transport here works around that:
+-- write the whole request sequence to a file, run the server with it as
+-- stdin, read what it writes before it exits on EOF.
 --
 --   server < requests.jsonl > responses.jsonl
 --
--- So every exchange re-runs the handshake and the server starts fresh. It
--- costs a process spawn per tool call, which for an npx-launched server is
--- seconds. Correct, honest, and slow -- documented rather than hidden. A
--- persistent transport is a drop-in replacement here (see `transport`) for
--- anyone who wants to add luv.
+-- Every call therefore re-spawns the server and re-runs the handshake. That
+-- is slow -- and worse, it is WRONG for any server holding state, because a
+-- re-spawned server loses the session, the open handle, the cursor. Speed
+-- is only the visible symptom.
+--
+-- Streamable HTTP fixes both without leaving pure Lua: the server is
+-- long-lived because it is not ours to spawn, and curl only ever needs
+-- request/response. Measured against server-everything -- 3.4s -> 0.24s to
+-- discover, 3.4s -> 0.06s per call, one handshake instead of one per call.
+--
+-- Prefer --mcp-url. Use stdio for servers that speak nothing else.
 --
 --
 -- TWO THINGS THE REAL SERVER TAUGHT THAT THE SPEC READS PAST
@@ -74,11 +79,12 @@ mcp.CLIENT_INFO = { name = "lua-agent", version = "0.1" }
 --   prefix     namespace mounted tool names, e.g. "fs_" (see mcp.mount)
 function mcp.new(opts)
     opts = opts or {}
-    if not opts.command and not opts.transport then
-        error("mcp.new: needs a command (or a transport)", 0)
+    if not opts.command and not opts.transport and not opts.url then
+        error("mcp.new: needs a command, a url, or a transport", 0)
     end
     return setmetatable({
         command = opts.command,
+        url = opts.url,
         transport = opts.transport,
         protocol_version = opts.protocol_version or mcp.PROTOCOL_VERSION,
         prefix = opts.prefix,
@@ -119,29 +125,60 @@ function Client:stdio(request_text)
     return ok or true, raw, code
 end
 
--- Send a batch and return responses keyed by id, plus any notifications.
-function Client:exchange(messages)
-    local lines = {}
-    for _, m in ipairs(messages) do
-        lines[#lines + 1] = trace.encode(m)
-    end
-    local request_text = table.concat(lines, "\n") .. "\n"
+-- Streamable HTTP: POST one JSON-RPC message to a server that is already
+-- running. This is the transport that does NOT have the stdio problem --
+-- the process is long-lived because it is not ours, and request/response
+-- over curl needs no bidirectional pipe.
+--
+-- Two details the shape of this depends on:
+--
+--   * The server issues an Mcp-Session-Id header on initialize. Echoing it
+--     back on later requests is what keeps one session alive across calls,
+--     which is the whole point: a re-spawned stdio server loses any state
+--     it was holding, and no amount of speed work fixes that.
+--   * Replies come back as SSE ("event: message" / "data: {...}"), not bare
+--     JSON, even for a single response. Hence the data: unwrapping in
+--     decode_stream below.
+function Client:http(request_text)
+    local body_path, err = tmpfile.write(request_text, ".json")
+    if not body_path then return false, err, -1 end
+    local out_path, hdr_path = tmpfile.name(".out"), tmpfile.name(".hdr")
 
-    local ok, raw, code
-    if self.transport then
-        ok, raw, code = self.transport(request_text)
-    else
-        ok, raw, code = self:stdio(request_text)
-    end
-    if not ok then
-        error(string.format("MCP transport failed (%s): %s",
-            tostring(code), tostring(raw):sub(1, 400)), 0)
+    local session = ""
+    if self.session_id then
+        session = string.format(' -H "mcp-session-id: %s"', self.session_id)
     end
 
-    local by_id, notifications = {}, {}
+    local cmd = string.format(
+        'curl -sS -X POST %s -D "%s" -H "content-type: application/json" '
+        .. '-H "accept: application/json, text/event-stream"%s -d @"%s" -o "%s"',
+        self.url, hdr_path, session, body_path, out_path)
+    local ok, _, code = os.execute(cmd)
+
+    local raw = tmpfile.slurp(out_path) or ""
+    local headers = tmpfile.slurp(hdr_path) or ""
+    tmpfile.remove(body_path, out_path, hdr_path)
+
+    -- Capture the session on the way past; the server only sends it once.
+    if not self.session_id then
+        self.session_id = headers:match("[Mm]cp%-[Ss]ession%-[Ii]d:%s*([^\r\n]+)")
+    end
+
+    if not ok and raw == "" then
+        return false, string.format("cannot reach the MCP server at %s", self.url), code
+    end
+    return true, raw, code
+end
+
+-- Responses arrive either as newline-delimited JSON (stdio) or as SSE
+-- frames (HTTP). Both reduce to "find the JSON objects", so one reader
+-- handles them: lines that are not JSON -- SSE "event:"/"id:" fields,
+-- server banners on stdout -- are simply skipped.
+local function decode_stream(raw, by_id, notifications)
     for line in tostring(raw):gmatch("[^\n]+") do
-        if line:match("%S") then
-            local msg = trace.decode(line)
+        local payload = line:match("^data:%s*(.*)$") or line
+        if payload:match("%S") then
+            local msg = trace.decode(payload)
             if type(msg) == "table" then
                 if msg.id ~= nil then
                     by_id[msg.id] = msg
@@ -149,21 +186,63 @@ function Client:exchange(messages)
                     notifications[#notifications + 1] = msg
                 end
             end
-            -- A line that does not decode is server noise on stdout. Skip
-            -- it rather than failing the whole exchange.
         end
     end
+end
+
+-- Send messages and return responses keyed by id, plus any notifications.
+--
+-- stdio batches everything into one stdin stream because the process only
+-- lives for the length of that stream. HTTP posts one message at a time
+-- against a session that outlives the call.
+function Client:exchange(messages)
+    local by_id, notifications = {}, {}
+
+    local function send(text)
+        local ok, raw, code
+        if self.transport then
+            ok, raw, code = self.transport(text)
+        elseif self.url then
+            ok, raw, code = self:http(text)
+        else
+            ok, raw, code = self:stdio(text)
+        end
+        if not ok then
+            error(string.format("MCP transport failed (%s): %s",
+                tostring(code), tostring(raw):sub(1, 400)), 0)
+        end
+        decode_stream(raw, by_id, notifications)
+    end
+
+    if self.url and not self.transport then
+        for _, m in ipairs(messages) do send(trace.encode(m)) end
+    else
+        local lines = {}
+        for _, m in ipairs(messages) do lines[#lines + 1] = trace.encode(m) end
+        send(table.concat(lines, "\n") .. "\n")
+    end
+
     return by_id, notifications
 end
 
--- The two messages every exchange has to start with.
+function Client:initialize_msg()
+    return { jsonrpc = "2.0", id = self:id(), method = "initialize", params = {
+        protocolVersion = self.protocol_version,
+        capabilities = trace.ordered({}, {}),
+        clientInfo = mcp.CLIENT_INFO,
+    } }
+end
+
+-- Messages to prepend to an exchange.
+--
+-- Over stdio the server is re-spawned every time, so every exchange has to
+-- re-handshake -- there is no session to resume. Over HTTP the handshake
+-- happens once and the session id carries it forward, so this returns
+-- nothing after the first call.
 function Client:handshake()
+    if self.url and self.session_ready then return {} end
     return {
-        { jsonrpc = "2.0", id = self:id(), method = "initialize", params = {
-            protocolVersion = self.protocol_version,
-            capabilities = trace.ordered({}, {}),
-            clientInfo = mcp.CLIENT_INFO,
-        } },
+        self:initialize_msg(),
         { jsonrpc = "2.0", method = "notifications/initialized" },
     }
 end
@@ -187,10 +266,15 @@ function Client:discover()
     msgs[#msgs + 1] = { jsonrpc = "2.0", id = list_id, method = "tools/list",
                         params = trace.ordered({}, {}) }
 
+    local init_id = msgs[1] and msgs[1].id
     local by_id = self:exchange(msgs)
-    local init = result_or_raise(by_id[1], "initialize")
-    self.server_info = init.serverInfo
-    self.negotiated_version = init.protocolVersion
+    if init_id then
+        local init = result_or_raise(by_id[init_id], "initialize")
+        self.server_info = init.serverInfo
+        self.negotiated_version = init.protocolVersion
+        -- From here HTTP exchanges skip the handshake and ride the session.
+        self.session_ready = true
+    end
 
     local listed = result_or_raise(by_id[list_id], "tools/list")
     self.tools = listed.tools or {}

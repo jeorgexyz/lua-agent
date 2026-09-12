@@ -10,6 +10,7 @@
 --   --no-constrain                free decoding; the 0% arm of the ablation
 --   --tools a,b,c                 default calc,read_file
 --   --mcp "<command>"             mount an MCP server's tools over stdio
+--   --mcp-url <url>               ...or over streamable HTTP (persistent)
 --   --mcp-prefix <str>            namespace them, default "mcp_"
 --   --mcp-trust                   let MCP tools run without approval
 --   --max-steps <n>               default 6
@@ -148,9 +149,9 @@ local function main(argv)
     -- approval gate, same grammar. Mounted BEFORE the backend is built,
     -- because the grammar and the Ollama schema are compiled from the
     -- registry and have to include them.
-    if o.mcp then
+    if o.mcp or o.mcp_url then
         local mcp = require('mcp')
-        local client = mcp.new({ command = o.mcp })
+        local client = mcp.new({ command = o.mcp, url = o.mcp_url })
         local ok, err = pcall(function()
             mcp.mount(reg, client, {
                 prefix = o.mcp_prefix or "mcp_",
@@ -161,9 +162,10 @@ local function main(argv)
             io.stderr:write("MCP: " .. tostring(err) .. "\n")
             os.exit(2)
         end
-        io.write(string.format("mcp:     %s (%s) -- %d tools\n",
+        io.write(string.format("mcp:     %s (%s) -- %d tools over %s\n",
             client.server_info and client.server_info.name or "?",
-            client.negotiated_version or "?", #(client.tools or {})))
+            client.negotiated_version or "?", #(client.tools or {}),
+            o.mcp_url and "http (session)" or "stdio (respawn per call)"))
     end
 
     local backend = build_backend(o, reg)
