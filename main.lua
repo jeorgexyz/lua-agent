@@ -9,6 +9,9 @@
 --   --tokenizer <path>            default <llama-path>/tokenizer.bin
 --   --no-constrain                free decoding; the 0% arm of the ablation
 --   --tools a,b,c                 default calc,read_file
+--   --mcp "<command>"             mount an MCP server's tools over stdio
+--   --mcp-prefix <str>            namespace them, default "mcp_"
+--   --mcp-trust                   let MCP tools run without approval
 --   --max-steps <n>               default 6
 --   --max-tokens <n>              context budget; defaults to the model's window
 --   --policy <name>               drop_oldest|elide_observations|summarize
@@ -31,7 +34,7 @@ local protocol = require('protocol')
 local FLAGS = {
     ["--no-constrain"] = true, ["--yes"] = true, ["--quiet"] = true,
     ["--full-prompt"] = true, ["--help"] = true, ["-h"] = true,
-    ["--ollama-free"] = true,
+    ["--ollama-free"] = true, ["--mcp-trust"] = true,
 }
 
 local function parse_args(argv)
@@ -139,6 +142,30 @@ local function main(argv)
     end
 
     local reg = build_tools(o.tools)
+
+    -- An MCP server's tools join the registry alongside the built-ins and
+    -- are indistinguishable to the loop from there: same validation, same
+    -- approval gate, same grammar. Mounted BEFORE the backend is built,
+    -- because the grammar and the Ollama schema are compiled from the
+    -- registry and have to include them.
+    if o.mcp then
+        local mcp = require('mcp')
+        local client = mcp.new({ command = o.mcp })
+        local ok, err = pcall(function()
+            mcp.mount(reg, client, {
+                prefix = o.mcp_prefix or "mcp_",
+                trust = o.mcp_trust,
+            })
+        end)
+        if not ok then
+            io.stderr:write("MCP: " .. tostring(err) .. "\n")
+            os.exit(2)
+        end
+        io.write(string.format("mcp:     %s (%s) -- %d tools\n",
+            client.server_info and client.server_info.name or "?",
+            client.negotiated_version or "?", #(client.tools or {})))
+    end
+
     local backend = build_backend(o, reg)
 
     -- Token counting needs a tokenizer, but NOT a model. The local backend

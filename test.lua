@@ -647,6 +647,129 @@ do
 end
 
 --------------------------------------------------------------------------
+group("mcp")
+--------------------------------------------------------------------------
+-- No server, no npx, no network. The fixtures are real captures from
+-- @modelcontextprotocol/server-everything, including the two things the
+-- spec does not lead with: responses arrive out of order with
+-- notifications mixed in, and a failing tool returns a SUCCESSFUL result
+-- carrying isError rather than a JSON-RPC error.
+do
+    local ok_mcp, mcp = pcall(require, "mcp")
+    if ok_mcp and mcp.new and ok_tools then
+        local sent
+        local function transport(reply, ok)
+            return function(request) sent = request return ok ~= false, reply, 0 end
+        end
+
+        -- Deliberately out of order: notification first, then tools/list
+        -- (id 2), then initialize (id 1). Position-based matching passes a
+        -- naive test and fails against the real server.
+        local discovery = table.concat({
+          '{"method":"notifications/tools/list_changed","jsonrpc":"2.0"}',
+          '{"jsonrpc":"2.0","id":2,"result":{"tools":[' ..
+            '{"name":"echo","description":"Echoes back the input string",' ..
+             '"inputSchema":{"type":"object","properties":{"message":{"type":"string"}},' ..
+             '"required":["message"]}},' ..
+            '{"name":"add","description":"Adds two numbers",' ..
+             '"inputSchema":{"type":"object","properties":{"a":{"type":"number"},' ..
+             '"b":{"type":"integer"}},"required":["a","b"]}}]}}',
+          '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18",' ..
+            '"serverInfo":{"name":"mcp-servers/everything","version":"2.0.0"}}}',
+        }, "\n")
+
+        local c = mcp.new({ transport = transport(discovery) })
+        local list = c:discover()
+
+        eq("discovers every tool", #list, 2)
+        eq("matches initialize by id, not position",
+           c.server_info and c.server_info.name, "mcp-servers/everything")
+        eq("records the negotiated version", c.negotiated_version, "2025-06-18")
+
+        local req = sent or ""
+        check("handshake sends initialize", req:match('"initialize"') ~= nil)
+        check("handshake sends the initialized notification",
+            req:match("notifications/initialized") ~= nil)
+        check("and asks for tools/list", req:match('"tools/list"') ~= nil)
+        check("requests are newline-delimited JSON",
+            select(2, req:gsub("\n", "")) >= 3, req)
+
+        -- Schema conversion into the registry's arg format.
+        local reg = tools.registry()
+        reg:add(tools.calc)
+        local mounted = mcp.mount(reg, c, { prefix = "mcp_" })
+        eq("mounts all of them", #mounted, 2)
+        check("namespaced by the prefix", reg:get("mcp_echo") ~= nil)
+        check("built-ins untouched", reg:get("calc") ~= nil)
+
+        local echo = reg:get("mcp_echo")
+        eq("required string argument survives", echo.args[1].name, "message")
+        eq("typed as a string", echo.args[1].type, "string")
+        eq("and marked required", echo.args[1].required, true)
+        -- Remote code runs outside this process; it does not get the
+        -- unattended treatment read-only built-ins get.
+        eq("remote tools need approval by default", echo.requires_approval, true)
+
+        local add = reg:get("mcp_add")
+        eq("JSON Schema integer maps to number", add.args[1].type, "number")
+        eq("args are sorted for a stable grammar", add.args[1].name, "a")
+
+        -- Collisions are refused, not silently resolved: shadowing calc
+        -- with a remote tool of the same name would be a nasty surprise.
+        local reg2 = tools.registry()
+        reg2:add(tools.calc)
+        local clash = mcp.new({ transport = transport(discovery) })
+        clash:discover()
+        clash.tools[1].name = "calc"
+        local cok, cerr = pcall(mcp.mount, reg2, clash, {})
+        check("refuses to shadow an existing tool", not cok)
+        check("and says to use a prefix",
+            tostring(cerr):match("prefix") ~= nil, cerr)
+
+        -- A failing tool: successful JSON-RPC, isError true.
+        local c2 = mcp.new({ transport = transport(table.concat({
+          '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{}}}',
+          '{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text",' ..
+            '"text":"MCP error -32602: Invalid input: expected string"}],"isError":true}}',
+        }, "\n")) })
+        local txt, is_err = c2:call("echo", {})
+        eq("tool failure is reported, not raised", is_err, true)
+        check("and keeps the message the model needs",
+            txt:match("expected string") ~= nil, txt)
+
+        -- Non-text content is named rather than dropped silently.
+        local c3 = mcp.new({ transport = transport(table.concat({
+          '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"x","serverInfo":{}}}',
+          '{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"image","data":"..."}]}}',
+        }, "\n")) })
+        local itxt = c3:call("shot", {})
+        check("non-text content is named", itxt:match("image") ~= nil, itxt)
+
+        -- A real JSON-RPC error object, which IS a failure.
+        local c4 = mcp.new({ transport = transport(
+          '{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}') })
+        local eok, eerr = pcall(function() return c4:discover() end)
+        check("a JSON-RPC error raises", not eok)
+        check("with the server's message",
+            tostring(eerr):match("Method not found") ~= nil, eerr)
+
+        -- Server that never started: stdout empty.
+        local c5 = mcp.new({ transport = transport("", false) })
+        local sok = pcall(function() return c5:discover() end)
+        check("a dead server raises rather than hanging", not sok)
+
+        -- Garbage on stdout must not kill an otherwise good exchange.
+        local c6 = mcp.new({ transport = transport(table.concat({
+          "Starting default (STDIO) server...",
+          '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"1","serverInfo":{}}}',
+          '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}',
+        }, "\n")) })
+        local gok = pcall(function() return c6:discover() end)
+        check("non-JSON noise on stdout is skipped", gok)
+    end
+end
+
+--------------------------------------------------------------------------
 group("replay")
 --------------------------------------------------------------------------
 -- Every transcript in examples/ is backed by a trace in traces/. Replaying

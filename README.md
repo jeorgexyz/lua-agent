@@ -226,6 +226,56 @@ itself.
 
 ---
 
+## MCP
+
+The agent speaks [Model Context Protocol](https://modelcontextprotocol.io).
+Mount a server and its tools join the registry beside the built-ins --
+indistinguishable to the loop from there: same validation, same approval
+gate, same grammar, same "a failure is an observation" rule.
+
+```bash
+lua54 main.lua "Echo hello" --backend ollama   --mcp "npx -y @modelcontextprotocol/server-everything"
+```
+
+```
+mcp:     mcp-servers/everything (2025-06-18) -- 13 tools
+[step 2] continue
+  call:    {"args":{"message":"hello from the agent"},"tool":"mcp_echo"}
+  result:  Echo: hello from the agent
+```
+
+`mcp.lua` is 173 lines: `initialize`, `notifications/initialized`,
+`tools/list`, `tools/call`. That is the whole surface needed to use a real
+server.
+
+**One honest limitation.** Lua has no bidirectional pipes -- `io.popen`
+opens a stream for reading *or* writing, never both -- so a long-lived
+stdio session is out of reach without a C extension. Instead the whole
+request sequence is written to a file, the server runs with it as stdin,
+and everything it writes before exiting on EOF is read back. That costs a
+process spawn per tool call (seconds, for an npx-launched server). It is
+correct and slow, and `transport` is the seam where a persistent
+implementation drops in.
+
+**Two things the real server taught that the spec reads past**, both now
+pinned by tests:
+
+- Responses come back **out of order**, with notifications interleaved.
+  Against `server-everything`, `notifications/tools/list_changed` arrived
+  *before* the `initialize` result, and a call for id 3 returned before id
+  2. Match on `id`, never position.
+- A failing tool returns a **successful** JSON-RPC result carrying
+  `isError: true`, not a JSON-RPC error. Treating it as an error loses the
+  message -- and the message is good ("expected string, received undefined
+  at message"), exactly the kind of observation this loop feeds back.
+
+Mounted tools require approval by default; remote code does not get the
+unattended treatment read-only built-ins get. `--mcp-trust` opts out,
+`--mcp-prefix` namespaces them, and a name collision with an existing tool
+is refused rather than silently shadowing it.
+
+---
+
 ## What's in the loop
 
 The interesting parts of an agent are not the happy path:
