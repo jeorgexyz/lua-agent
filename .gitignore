@@ -3,3 +3,10 @@
 
 # traces/*.jsonl are NOT ignored: the replay tests and every transcript in
 # examples/ depend on them, so they are part of the repo.
+
+# Python bytecode from tools/
+__pycache__/
+*.pyc
+
+# Test artifact: the approved-write eval task writes this and cleans it up.
+out.txt

@@ -423,6 +423,37 @@ lua-agent/
 └── examples/         # real transcripts, generated not written
 ```
 
+## Multimodal: training a connector
+
+`colab/train_projection.ipynb` trains a LLaVA-style projection — the map
+from a vision encoder's embedding space into the LLM's. Everything else is
+frozen:
+
+| Piece | Params | Trained |
+|---|---|---|
+| CLIP ViT-B/32 | 88M | no |
+| `stories15M` | 15M | no |
+| **projection 512 -> 288** | **~147K** | **yes** |
+
+The experiment: splice the projected image vector in where a token embedding
+would go, prompt `a photo of a`, and train so the frozen LLM's next token is
+the CIFAR-10 class. Accuracy is read out of generated text against a 10%
+chance baseline — and reported two ways, free generation over the whole
+32000-token vocabulary and forced choice among the ten class tokens, because
+the gap between those is the interesting part.
+
+`tools/llama2c.py` is the PyTorch side: it reads the same `.bin` repo 1
+reads, and proves it by reproducing repo 1's documented temperature-0
+continuation exactly. Its batched forward is checked against its incremental
+one (max |diff| 2.5e-05, same argmax), because training runs through the
+batched path and nothing else would ever compare them.
+
+A result at chance is a real outcome, not a failed notebook: it would mean a
+15M model trained only on children's stories cannot be steered by a projected
+image vector. Same shape as finding `stories42M` could not pick a tool.
+
+---
+
 ## Further reading
 
 [`docs/design.md`](docs/design.md) — why the repo exists, what it deliberately
